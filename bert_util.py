@@ -47,7 +47,7 @@ class MyBertForSequenceClassification(BertPreTrainedModel):
             return loss
         else:
             return logits
-        
+
 class MyLSTMForSequenceClassification(BertPreTrainedModel):
     def __init__(self, config, num_labels):
         super(MyLSTMForSequenceClassification, self).__init__(config)
@@ -61,11 +61,11 @@ class MyLSTMForSequenceClassification(BertPreTrainedModel):
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
         input_ids_lengths = (input_ids > 0).sum(dim=1)
         words_embeddings = self.my_word_embeddings(input_ids)
-        
+
         packseq = nn.utils.rnn.pack_padded_sequence(words_embeddings, input_ids_lengths, batch_first=True, enforce_sorted=False)
         output, (h, c) = self.lstm(packseq)
         output, lengths = nn.utils.rnn.pad_packed_sequence(output, batch_first=True, padding_value=0)
-        
+
 #         last_hidden = torch.cat([h[0], h[1]], dim=-1)
 
         logits = self.classifier(h[0])
@@ -76,7 +76,7 @@ class MyLSTMForSequenceClassification(BertPreTrainedModel):
             return loss
         else:
             return logits
-        
+
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
 
@@ -104,10 +104,14 @@ class MnliProcessor(object):
 
     def get_train_examples(self, data_dir, num_train_samples=-1):
         """See base class."""
+        if os.path.isdir(data_dir):
+            data_path = os.path.join(data_dir, "mnli_train.tsv")
+        else:
+            data_path = data_dir
         if num_train_samples != -1:
-            return self._create_examples(self._read_tsv(os.path.join(data_dir, "mnli_train.tsv")), "mnli_train")[: num_train_samples]
+            return self._create_examples(self._read_tsv(data_path)), "mnli_train")[: num_train_samples]
         return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "mnli_train.tsv")), "mnli_train")
+            self._read_tsv(data_path), "mnli_train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -149,7 +153,7 @@ class HansProcessor(object):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "small_heuristics_evaluation_set.txt")), "HANS small")
-    
+
     def get_neg_test_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
@@ -182,7 +186,7 @@ class HansProcessor(object):
             for line in reader:
                 lines.append(line)
             return lines
-        
+
 class Sst2Processor(object):
     """Processor for the SST-2 data set (GLUE version)."""
 
@@ -214,7 +218,7 @@ class Sst2Processor(object):
             examples.append(
                 InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
         return examples
-    
+
     def _read_tsv(cls, input_file, quotechar=None):
         """Reads a tab separated value file."""
         with open(input_file, "r") as f:
@@ -423,7 +427,7 @@ def get_diff_input_masks(input_mask, test_tok_sal_list):
             continue
         else:
             cleaned_sal_ordered_ix.append(sal_ix)
-            
+
     # add zero and random
     abs_sal_ordered_ix = np.argsort(np.absolute(sal_scores))
     cleaned_abs_sal_ordered_ix = []
@@ -432,7 +436,7 @@ def get_diff_input_masks(input_mask, test_tok_sal_list):
             continue
         else:
             cleaned_abs_sal_ordered_ix.append(sal_ix)
-    
+
 #     mask_ix = (cleaned_sal_ordered_ix[0], cleaned_sal_ordered_ix[int(len(cleaned_sal_ordered_ix)/2)], cleaned_sal_ordered_ix[-1])
     mask_ix = (cleaned_sal_ordered_ix[0], cleaned_sal_ordered_ix[int(len(cleaned_sal_ordered_ix)/2)], cleaned_sal_ordered_ix[-1], cleaned_abs_sal_ordered_ix[0], random.choice(cleaned_sal_ordered_ix)) # lowest, median, highest, zero, random
     diff_input_masks = []
@@ -450,11 +454,11 @@ def influence_distance(orig_influences, alt_influences, top_percentage=0.01):
     alt_sorted_ix = list(np.argsort(alt_influences))
     alt_sorted_ix.reverse()
     num_top = int(len(orig_influences) * top_percentage)
-    
+
     orig_top_ix = orig_sorted_ix[:num_top]
     alt_top_ix = alt_sorted_ix[:num_top]
     orig_top_ix_set = set(orig_top_ix)
     alt_top_ix_set = set(alt_top_ix)
     ix_intersection = list(orig_top_ix_set.intersection(alt_top_ix_set))
-    
+
     return len(ix_intersection) / num_top
