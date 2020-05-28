@@ -115,8 +115,11 @@ class MnliProcessor(object):
 
     def get_dev_examples(self, data_dir):
         """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "mnli_dev.tsv")), "mnli_dev_matched")
+        if os.path.isdir(data_dir):
+            data_path = os.path.join(data_dir, "mnli_dev.tsv")
+        else:
+            data_path = "data/mnli_dev.tsv"
+        return self._create_examples(self._read_tsv(data_path, "mnli_dev_matched"))
 
     def get_labels(self):
         """See base class."""
