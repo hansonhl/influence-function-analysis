@@ -109,7 +109,7 @@ class MnliProcessor(object):
         else:
             data_path = data_dir
         if num_train_samples != -1:
-            return self._create_examples(self._read_tsv(data_path)), "mnli_train")[: num_train_samples]
+            return self._create_examples(self._read_tsv(data_path), "mnli_train")[: num_train_samples]
         return self._create_examples(
             self._read_tsv(data_path), "mnli_train")
 
