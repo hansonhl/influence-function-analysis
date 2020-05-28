@@ -110,8 +110,7 @@ class MnliProcessor(object):
             data_path = data_dir
         if num_train_samples != -1:
             return self._create_examples(self._read_tsv(data_path), "mnli_train")[: num_train_samples]
-        return self._create_examples(
-            self._read_tsv(data_path), "mnli_train")
+        return self._create_examples(self._read_tsv(data_path), "mnli_train")
 
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -119,7 +118,7 @@ class MnliProcessor(object):
             data_path = os.path.join(data_dir, "mnli_dev.tsv")
         else:
             data_path = "data/mnli_dev.tsv"
-        return self._create_examples(self._read_tsv(data_path, "mnli_dev_matched"))
+        return self._create_examples(self._read_tsv(data_path), "mnli_dev_matched")
 
     def get_labels(self):
         """See base class."""
