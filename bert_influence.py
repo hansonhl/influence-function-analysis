@@ -151,7 +151,7 @@ def main():
     parser.add_argument("--lissa_depth",
                         default=1.0,
                         type=float)
-    
+
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -159,7 +159,7 @@ def main():
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    
+
     if not args.influence_on_decision:
         raise ValueError("To use loss function w.r.t. the ground truth, manually disable this error in the code.")
 
@@ -174,7 +174,7 @@ def main():
     sst_processor = Sst2Processor()
     if args.task == "SA":
         label_list = sst_processor.get_labels()
-    elif args.task == "NLI":
+    elif args.task == "NLI" or args.task == "NLI_aug":
         label_list = mnli_processor.get_labels()
     elif args.task == "NLI_negation":
         label_list = mnli_processor.get_labels()
@@ -220,7 +220,7 @@ def main():
             pass # need gradients through embedding layer for computing saliency map
         else:
             p.requires_grad = False
-            
+
     param_shape_tensor = []
     param_size = 0
     for p in param_influence:
@@ -228,7 +228,7 @@ def main():
         param_shape_tensor.append(tmp_p)
         param_size += torch.numel(tmp_p)
     logger.info("  Parameter size = %d", param_size)
-    
+
     if args.task == "SA":
         train_examples = sst_processor.get_train_examples(args.data_dir, args.num_train_samples)
     elif args.task == "NLI":
@@ -237,6 +237,9 @@ def main():
         train_examples = mnli_processor.get_train_examples(args.data_dir, args.num_train_samples)
     elif args.task == "NLI_natural":
         train_examples = mnli_processor.get_train_examples(args.data_dir, args.num_train_samples)
+    elif args.task == "NLI_aug":
+        train_examples = mnli_processor.get_train_examples(os.path.join(args.data_dir, "aug_mnli_train_10k.tsv"), 
+                                                           args.num_train_samples)
 
     train_features = convert_examples_to_features(
         train_examples, label_list, args.max_seq_length, tokenizer)
@@ -250,16 +253,16 @@ def main():
     train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_id, all_guids)
     train_dataloader_wbatch = DataLoader(train_data, sampler=SequentialSampler(train_data), batch_size=args.train_batch_size)
     train_dataloader = DataLoader(train_data, sampler=SequentialSampler(train_data), batch_size=1)
-    
+
     if args.task == "SA":
         test_examples = sst_processor.get_dev_examples(args.data_dir)
-    elif args.task == "NLI":
+    elif args.task == "NLI" or args.task == "NLI_aug":
         test_examples = hans_processor.get_test_examples(args.data_dir)
     elif args.task == "NLI_negation":
         test_examples = hans_processor.get_neg_test_examples(args.data_dir)
     elif args.task == "NLI_natural":
         test_examples = mnli_processor.get_dev_examples(args.data_dir)
-    
+
     test_features = convert_examples_to_features(
         test_examples, label_list, args.max_seq_length, tokenizer)
     logger.info("***** Test set *****")
@@ -271,20 +274,20 @@ def main():
     all_guids = torch.tensor([f.guid for f in test_features], dtype=torch.long)
     test_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_id, all_guids)
     test_dataloader = DataLoader(test_data, sampler=SequentialSampler(test_data), batch_size=1)
-    
+
     damping = args.damping
-    
+
     test_idx = args.test_idx
     start_test_idx = args.start_test_idx
     end_test_idx = args.end_test_idx
-    
+
     for input_ids, input_mask, segment_ids, label_ids, guids in test_dataloader:
         model.eval()
         random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
         train_dataloader_lissa = DataLoader(train_data, batch_size=args.train_batch_size, shuffle=True, drop_last=True)
-        
+
         guid = guids[0].item() # test set loader must have a batch size of 1 now
         if start_test_idx != -1 and end_test_idx != -1:
             if guid < start_test_idx:
@@ -300,7 +303,7 @@ def main():
         input_mask = input_mask.to(device)
         segment_ids = segment_ids.to(device)
         label_ids = label_ids.to(device)
-        
+
         ######## GET TEST EXAMPLE DECISION ########
         with torch.no_grad():
             logits = model(input_ids, segment_ids, input_mask)
@@ -314,13 +317,13 @@ def main():
         if args.influence_on_decision:
             label_ids = torch.from_numpy(outputs).long().to(device)
         ################
-            
+
         ######## L_TEST GRADIENT ########
         model.zero_grad()
         test_loss = model(input_ids, segment_ids, input_mask, label_ids)
         test_grads = autograd.grad(test_loss, param_influence)
         ################
-        
+
         ######## TEST EXAMPLE SALIENCY MAP ########
         if args.if_compute_saliency:
             saliency_scores = saliency_map(model, input_ids, segment_ids, input_mask, pred_label_ids)
@@ -330,14 +333,14 @@ def main():
                     break
                 test_tok_sal_list.append((tok, sal))
         ################
-        
+
         ######## IHVP ########
         model.train()
         logger.info("######## START COMPUTING IHVP ########")
         inverse_hvp = get_inverse_hvp_lissa(test_grads, model, device, param_influence, train_dataloader_lissa, damping=damping, num_samples=args.lissa_repeat, recursion_depth=int(len(train_examples)*args.lissa_depth))
         logger.info("######## FINISHED COMPUTING IHVP ########")
         ################
-        
+
         influences = np.zeros(len(train_dataloader.dataset))
         train_tok_sal_lists = []
         for train_idx, (_input_ids, _input_mask, _segment_ids, _label_ids, _) in enumerate(tqdm(train_dataloader, desc="Train set index")):
@@ -346,7 +349,7 @@ def main():
             _input_mask = _input_mask.to(device)
             _segment_ids = _segment_ids.to(device)
             _label_ids = _label_ids.to(device)
-            
+
             ######## L_TRAIN GRADIENT ########
             model.zero_grad()
             train_loss = model(_input_ids, _segment_ids, _input_mask, _label_ids)
@@ -361,7 +364,7 @@ def main():
 #                     logits = logits.detach().cpu().numpy()
 #                     outputs = np.argmax(logits, axis=1)
 #                     _pred_label_ids = torch.from_numpy(outputs).long().to(device)
-                
+
 #                 saliency_scores = saliency_map(model, _input_ids, _segment_ids, _input_mask, _pred_label_ids)
 #                 train_tok_sal_list = []
 #                 for tok, sal in zip(tokenizer.convert_ids_to_tokens(_input_ids.view(-1).cpu().numpy()), saliency_scores):
